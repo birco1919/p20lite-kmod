@@ -36,6 +36,9 @@ jobs:
         run: |
           cp phone.config "$KSRC/.config"
           cd "$KSRC"
+          # Huawei left these headers out of the source drop; the options only
+          # add debug counters and do not touch USB/net types.
+          for opt in $(cat "$GITHUB_WORKSPACE/disable.txt"); do scripts/config --disable "$opt"; done
           make olddefconfig LOCALVERSION=
           grep -E 'CONFIG_LOCALVERSION=|CONFIG_MODVERSIONS|CONFIG_USB_U_ETHER' .config
 
@@ -43,7 +46,14 @@ jobs:
         run: |
           cd "$KSRC"
           set -o pipefail
-          make -j"$(nproc)" LOCALVERSION= HOSTCFLAGS="-fcommon" KCFLAGS="-Wno-error" Image 2>&1 | tail -n 60
+          if ! make -k -j"$(nproc)" LOCALVERSION= HOSTCFLAGS="-fcommon" KCFLAGS="-Wno-error" Image > build.log 2>&1; then
+            echo "::group::all errors"
+            grep -nE "error:|Error [0-9]|undefined reference" build.log | grep -v Wno-error | head -n 200
+            echo "::endgroup::"
+            tail -n 40 build.log
+            exit 1
+          fi
+          tail -n 20 build.log
           make -j"$(nproc)" LOCALVERSION= HOSTCFLAGS="-fcommon" KCFLAGS="-Wno-error" modules 2>&1 | tail -n 20 || true
           ls -l arch/arm64/boot/Image Module.symvers
           cat include/config/kernel.release
