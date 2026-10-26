@@ -1,0 +1,8 @@
+# Out-of-tree build of the USB gadget ECM / NCM / CDC-subset functions for the
+# running 4.9.337-Phenix kernel, which has u_ether built in but not these.
+obj-m := usb_f_ecm.o usb_f_ncm.o usb_f_ecm_subset.o
+usb_f_ecm-y := f_ecm.o
+usb_f_ncm-y := f_ncm.o
+usb_f_ecm_subset-y := f_subset.o
+
+ccflags-y += -I$(srctree)/drivers/usb/gadget -I$(srctree)/drivers/usb/gadget/function
