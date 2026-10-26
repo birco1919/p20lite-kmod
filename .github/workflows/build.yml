@@ -67,6 +67,7 @@ jobs:
           cp "$KSRC"/drivers/usb/gadget/function/f_ecm.c module/
           cp "$KSRC"/drivers/usb/gadget/function/f_ncm.c module/
           cp "$KSRC"/drivers/usb/gadget/function/f_subset.c module/
+          cp -r "$KSRC"/drivers/usb/gadget/function/function-hisi module/
           # Huawei's arm64 Makefile makes vdso_prepare depend on prepare0, which
           # does not exist for external (M=) builds; the vdso is already built.
           sed -i 's/^vdso_prepare: prepare0/vdso_prepare:/' "$KSRC/arch/arm64/Makefile"
