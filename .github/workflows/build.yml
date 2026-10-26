@@ -45,25 +45,30 @@ jobs:
       - name: Build kernel (for Module.symvers / CRCs)
         run: |
           cd "$KSRC"
-          set -o pipefail
-          if ! make -k -j"$(nproc)" LOCALVERSION= HOSTCFLAGS="-fcommon" KCFLAGS="-Wno-error" Image > build.log 2>&1; then
-            echo "::group::all errors"
-            grep -nE "error:|Error [0-9]|undefined reference" build.log | grep -v Wno-error | head -n 200
-            echo "::endgroup::"
-            tail -n 40 build.log
-            exit 1
-          fi
-          tail -n 20 build.log
-          make -j"$(nproc)" LOCALVERSION= HOSTCFLAGS="-fcommon" KCFLAGS="-Wno-error" modules 2>&1 | tail -n 20 || true
-          ls -l arch/arm64/boot/Image Module.symvers
+          # Huawei vendor drivers in this drop do not build standalone (their
+          # include paths come from Huawei's own build system). They are not
+          # needed: only the CRCs of symbols exported by the core kernel, USB
+          # gadget and net code are, and -k still compiles all of those.
+          make -k -j"$(nproc)" LOCALVERSION= HOSTCFLAGS="-fcommon" KCFLAGS="-Wno-error" vmlinux > build.log 2>&1 || true
+          grep -cE "fatal error:" build.log || true
           cat include/config/kernel.release
+          for o in kernel/module.o drivers/usb/gadget/function/u_ether.o drivers/usb/gadget/composite.o net/core/dev.o; do ls -l "$o"; done
+
+          # Module.symvers from the __crc_ symbols genksyms put in each object.
+          find . -name '*.o' ! -name 'built-in.o' ! -path './scripts/*' ! -path './tools/*' -print0 \
+            | xargs -0 aarch64-linux-gnu-nm 2>/dev/null \
+            | awk '$3 ~ /^__crc_/ { v=$1; print "0x" substr(v, length(v)-7) "\t" substr($3, 7) "\tvmlinux\tEXPORT_SYMBOL" }' \
+            | sort -u -k2,2 > Module.symvers
+          wc -l Module.symvers
+          grep -E "\s(gether_connect|gether_setup_name_default|usb_function_register|config_ep_by_speed|module_layout|alloc_etherdev_mqs)\s" Module.symvers
 
       - name: Build ECM / NCM gadget modules out of tree
         run: |
           cp "$KSRC"/drivers/usb/gadget/function/f_ecm.c module/
           cp "$KSRC"/drivers/usb/gadget/function/f_ncm.c module/
           cp "$KSRC"/drivers/usb/gadget/function/f_subset.c module/
-          make -C "$KSRC" M="$PWD/module" LOCALVERSION= KCFLAGS="-Wno-error" modules
+          make -C "$KSRC" M="$PWD/module" LOCALVERSION= KCFLAGS="-Wno-error" modules 2>&1 | tee module.log
+          ! grep -E "undefined!|has no CRC" module.log
           for m in module/*.ko; do echo "== $m"; modinfo "$m" | grep -E 'vermagic|depends|alias'; done
           grep -E 'gether_connect|usb_function_register|module_layout' "$KSRC/Module.symvers" || true
           mkdir -p out && cp module/*.ko out/ && cp "$KSRC/Module.symvers" out/
